@@ -26,6 +26,15 @@ export default function App() {
   const [manualDate, setManualDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [manualNote, setManualNote] = useState('');
 
+  // Theme & Chat History States
+  const [theme, setTheme] = useState(() => localStorage.getItem('SPENDWISE_THEME') || 'nebula');
+  const [chatHistory, setChatHistory] = useState(() => {
+    const saved = localStorage.getItem('SPENDWISE_CHAT_HISTORY');
+    return saved ? JSON.parse(saved) : [
+      { id: 1, sender: 'bot', text: "Hello! I am your SpendWise Assistant. Speak to me or type your expenses to get started.", timestamp: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) }
+    ];
+  });
+
   // Assistant & Voice States
   const [orbState, setOrbState] = useState('idle'); // 'idle' | 'listening' | 'thinking' | 'speaking' | 'error'
   const [recLanguage, setRecLanguage] = useState('en-US'); // 'en-US' | 'te-IN'
@@ -45,6 +54,7 @@ export default function App() {
   const recognitionRef = useRef(null);
   const synthRef = useRef(window.speechSynthesis);
   const speechUtteranceRef = useRef(null);
+  const chatFeedRef = useRef(null);
 
   // --- Initialize Speech Recognition & Synthesis ---
   useEffect(() => {
@@ -132,6 +142,24 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('SPENDWISE_EXPENSES', JSON.stringify(expenses));
   }, [expenses]);
+
+  // Sync theme
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('SPENDWISE_THEME', theme);
+  }, [theme]);
+
+  // Sync chat history
+  useEffect(() => {
+    localStorage.setItem('SPENDWISE_CHAT_HISTORY', JSON.stringify(chatHistory));
+  }, [chatHistory]);
+
+  // Scroll chat history to bottom
+  useEffect(() => {
+    if (chatFeedRef.current) {
+      chatFeedRef.current.scrollTop = chatFeedRef.current.scrollHeight;
+    }
+  }, [chatHistory]);
 
   // Trigger Gemini Analysis when transcription stops and is ready
   useEffect(() => {
@@ -227,6 +255,15 @@ export default function App() {
 
   // --- NLP & Intent Processing ---
   const handleAnalyzeSpeech = async (sentence) => {
+    // Append User Message to Chat History
+    const userMsg = {
+      id: Date.now(),
+      sender: 'user',
+      text: sentence,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+    setChatHistory(prev => [...prev, userMsg]);
+
     try {
       const data = await analyzeExpenseSentence(apiKey, sentence);
       setParsedData(data);
@@ -278,6 +315,16 @@ export default function App() {
       }
 
       setBotReply(responseText);
+
+      // Append Bot Response to Chat History
+      const botMsg = {
+        id: Date.now() + 1,
+        sender: 'bot',
+        text: responseText,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+      setChatHistory(prev => [...prev, botMsg]);
+
       speakText(responseText);
     } catch (error) {
       console.error(error);
@@ -325,6 +372,15 @@ export default function App() {
       return;
     }
 
+    // Append user manual action log
+    const userMsg = {
+      id: Date.now(),
+      sender: 'user',
+      text: `[Manual Entry] Logged ₹${manualAmount} for ${manualCategory}: "${manualNote.trim() || 'No notes'}"`,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+    setChatHistory(prev => [...prev, userMsg]);
+
     const newExpense = {
       id: Date.now(),
       amount: Number(manualAmount),
@@ -345,6 +401,16 @@ export default function App() {
     // Synthesize response feedback
     const responseText = `Added expense of ${newExpense.amount} rupees for ${newExpense.category} manually.`;
     setBotReply(responseText);
+
+    // Append Bot reply
+    const botMsg = {
+      id: Date.now() + 1,
+      sender: 'bot',
+      text: responseText,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+    setChatHistory(prev => [...prev, botMsg]);
+
     speakText(responseText);
   };
 
@@ -478,6 +544,21 @@ export default function App() {
                     transcript={transcript}
                   />
 
+                  {/* Chat Timeline Feed */}
+                  <div className="chat-messages-container" ref={chatFeedRef}>
+                    {chatHistory.map((msg) => (
+                      <div key={msg.id} className={`chat-message-bubble ${msg.sender === 'user' ? 'msg-user' : 'msg-bot'}`}>
+                        <div className="msg-avatar">
+                          {msg.sender === 'user' ? <Mic size={10} /> : '🤖'}
+                        </div>
+                        <div className="msg-content-wrapper">
+                          <div className="msg-content-text">{msg.text}</div>
+                          <span className="msg-time">{msg.timestamp}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
                   {/* Error Callout */}
                   {errorMessage && (
                     <div className="error-callout">
@@ -486,28 +567,17 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* AI Text Response bubble */}
-                  {botReply && (
-                    <div className="assistant-bubble glass-panel">
-                      <div className="bubble-header">
-                        <Volume2 size={14} className="text-cyan" />
-                        <span>Response Speech:</span>
-                      </div>
-                      <p className="bubble-text">{botReply}</p>
-                    </div>
-                  )}
-
                   {/* Structured JSON display */}
                   {parsedData && (
-                    <div className="structured-data-display glass-panel">
-                      <div className="bubble-header border-bottom">
-                        <Database size={14} className="text-secondary" />
-                        <span>Parsed NLP Entities:</span>
-                      </div>
+                    <details className="structured-data-details glass-panel">
+                      <summary className="bubble-header cursor-pointer" style={{ userSelect: 'none' }}>
+                        <Database size={14} className="text-secondary" style={{ marginRight: '6px' }} />
+                        <span>Parsed NLP Entities (Debug)</span>
+                      </summary>
                       <pre className="json-pre">
                         {JSON.stringify(parsedData, null, 2)}
                       </pre>
-                    </div>
+                    </details>
                   )}
                 </>
               ) : (
@@ -709,9 +779,64 @@ export default function App() {
             </div>
           </div>
 
-          {/* Section D: Database Actions */}
+          {/* Section D: Theme Selector */}
+          <div className="drawer-section border-top">
+            <label className="section-label">🎨 Interface Themes</label>
+            <div className="theme-toggle-grid">
+              <button 
+                onClick={() => setTheme('nebula')} 
+                className={`theme-node-btn node-nebula ${theme === 'nebula' ? 'active' : ''}`}
+                title="Deep Nebula"
+              >
+                <span className="theme-color-preview"></span>
+                <span className="theme-label-name">Nebula</span>
+              </button>
+              <button 
+                onClick={() => setTheme('emerald')} 
+                className={`theme-node-btn node-emerald ${theme === 'emerald' ? 'active' : ''}`}
+                title="Emerald Forest"
+              >
+                <span className="theme-color-preview"></span>
+                <span className="theme-label-name">Emerald</span>
+              </button>
+              <button 
+                onClick={() => setTheme('cyberpunk')} 
+                className={`theme-node-btn node-cyberpunk ${theme === 'cyberpunk' ? 'active' : ''}`}
+                title="Cyberpunk"
+              >
+                <span className="theme-color-preview"></span>
+                <span className="theme-label-name">Cyberpunk</span>
+              </button>
+              <button 
+                onClick={() => setTheme('light')} 
+                className={`theme-node-btn node-light ${theme === 'light' ? 'active' : ''}`}
+                title="Snow Glass Light"
+              >
+                <span className="theme-color-preview"></span>
+                <span className="theme-label-name">Light</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Section E: Database & Actions */}
           <div className="drawer-section border-top">
             <label className="section-label text-red">Danger Area</label>
+            
+            <button
+              onClick={() => {
+                if (window.confirm("Clear all your conversation history?")) {
+                  setChatHistory([
+                    { id: Date.now(), sender: 'bot', text: "Chat history cleared. How can I help you now?", timestamp: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) }
+                  ]);
+                }
+              }}
+              className="btn-danger-action"
+              style={{ background: 'rgba(245, 158, 11, 0.08)', borderColor: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24' }}
+            >
+              <MessageSquare size={14} style={{ marginRight: '6px' }} />
+              Clear Chat History
+            </button>
+
             <button
               onClick={() => {
                 if (window.confirm("Are you sure you want to clear all your saved expenses? This cannot be undone.")) {
@@ -722,6 +847,7 @@ export default function App() {
                 }
               }}
               className="btn-danger-action"
+              style={{ marginTop: '8px' }}
             >
               <Database size={14} style={{ marginRight: '6px' }} />
               Clear Local Database
