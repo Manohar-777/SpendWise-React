@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Mic, MicOff, Settings, Wallet, Volume2, Database, Trash2, HelpCircle, 
-  Key, RefreshCw, Layers, Award, BarChart3, AlertTriangle, Eye, EyeOff
+  Key, RefreshCw, Layers, Award, BarChart3, AlertTriangle, Eye, EyeOff,
+  Plus, MessageSquare
 } from 'lucide-react';
 import VoiceOrb from './components/VoiceOrb';
 import ExpenseCharts from './components/ExpenseCharts';
@@ -17,6 +18,13 @@ export default function App() {
     const saved = localStorage.getItem('SPENDWISE_EXPENSES');
     return saved ? JSON.parse(saved) : [];
   });
+
+  // UI Tabs & Manual Input
+  const [activeTab, setActiveTab] = useState('voice'); // 'voice' | 'manual'
+  const [manualAmount, setManualAmount] = useState('');
+  const [manualCategory, setManualCategory] = useState('groceries');
+  const [manualDate, setManualDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [manualNote, setManualNote] = useState('');
 
   // Assistant & Voice States
   const [orbState, setOrbState] = useState('idle'); // 'idle' | 'listening' | 'thinking' | 'speaking' | 'error'
@@ -256,8 +264,12 @@ export default function App() {
           responseText = "I have cleared all your recorded expenses. Your database is now empty.";
           break;
 
+        case 'chat':
+          responseText = data.chatResponse || "Hello! Let me know if you have any questions about budgeting or saving.";
+          break;
+
         case 'help':
-          responseText = "I can track your expenses. Speak something like: 'spent 300 on food today' or Telugu 'ఈరోజు groceries కి 500 ఖర్చు'. I will record it, categorize it, and provide voice breakdowns when you ask.";
+          responseText = data.chatResponse || "I can track your expenses. Speak something like: 'spent 300 on food today' or Telugu 'ఈరోజు groceries కి 500 ఖర్చు'. I will record it, categorize it, and provide voice breakdowns when you ask.";
           break;
 
         default:
@@ -306,6 +318,36 @@ export default function App() {
     }
   };
 
+  const handleAddManualExpense = (e) => {
+    e.preventDefault();
+    if (!manualAmount || isNaN(manualAmount) || Number(manualAmount) <= 0) {
+      setErrorMessage("Please enter a valid amount greater than zero.");
+      return;
+    }
+
+    const newExpense = {
+      id: Date.now(),
+      amount: Number(manualAmount),
+      category: manualCategory,
+      date: manualDate || new Date().toISOString().split('T')[0],
+      note: manualNote.trim() || `${manualCategory} manual log`
+    };
+
+    setExpenses(prev => [newExpense, ...prev]);
+
+    // Reset manual form fields
+    setManualAmount('');
+    setManualCategory('groceries');
+    setManualDate(new Date().toISOString().split('T')[0]);
+    setManualNote('');
+    setErrorMessage('');
+
+    // Synthesize response feedback
+    const responseText = `Added expense of ${newExpense.amount} rupees for ${newExpense.category} manually.`;
+    setBotReply(responseText);
+    speakText(responseText);
+  };
+
   const handleSaveApiKey = (keyInput) => {
     const trimmed = keyInput.trim();
     localStorage.setItem('SPENDWISE_GEMINI_KEY', trimmed);
@@ -319,8 +361,42 @@ export default function App() {
     setParsedData(null);
   };
 
-  // Compute analytics
-  const totalSpent = expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  // Compute period-based summaries
+  const getPeriodStats = () => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    
+    // Define 7 days ago limit
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    
+    // Define start of current calendar month
+    const now = new Date();
+    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const spentToday = expenses
+      .filter(e => e.date === todayStr)
+      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+    const spentThisWeek = expenses
+      .filter(e => {
+        if (!e.date) return false;
+        const d = new Date(e.date);
+        return d >= sevenDaysAgo && d <= now;
+      })
+      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+    const spentThisMonth = expenses
+      .filter(e => {
+        if (!e.date) return false;
+        const d = new Date(e.date);
+        return d >= firstDayOfMonth && d <= now;
+      })
+      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+    return { spentToday, spentThisWeek, spentThisMonth };
+  };
+
+  const { spentToday, spentThisWeek, spentThisMonth } = getPeriodStats();
   const categoriesCount = new Set(expenses.map(e => e.category)).size;
 
   return (
@@ -335,19 +411,19 @@ export default function App() {
           <span className="beta-tag">VOICE AI</span>
         </div>
 
-        {/* Global Summary Statistics widgets */}
+        {/* Global Summary Statistics widgets - period-based summaries */}
         <div className="header-stats">
           <div className="stat-widget">
-            <span className="stat-label">Total Outflow</span>
-            <span className="stat-value text-glow">₹{totalSpent.toLocaleString()}</span>
+            <span className="stat-label">Spent Today</span>
+            <span className="stat-value text-glow">₹{spentToday.toLocaleString()}</span>
           </div>
           <div className="stat-widget border-left">
-            <span className="stat-label">Categories</span>
-            <span className="stat-value">{categoriesCount}</span>
+            <span className="stat-label">This Week</span>
+            <span className="stat-value text-glow">₹{spentThisWeek.toLocaleString()}</span>
           </div>
           <div className="stat-widget border-left">
-            <span className="stat-label">Transactions</span>
-            <span className="stat-value">{expenses.length}</span>
+            <span className="stat-label">This Month</span>
+            <span className="stat-value text-glow">₹{spentThisMonth.toLocaleString()}</span>
           </div>
         </div>
 
@@ -366,52 +442,142 @@ export default function App() {
         {/* Main Dashboard Panel */}
         <main className="dashboard-content">
           
-          {/* Left Column: Voice Control Hub */}
+          {/* Left Column: Voice Control & Manual Hub */}
           <section className="dashboard-column voice-hub">
             <div className="glass-panel voice-console-card">
-              <div className="card-header-icon border-bottom">
-                <Layers size={18} className="text-secondary" />
-                <h2>Assistant Hub</h2>
-              </div>
               
-              {/* Animated Orb Component */}
-              <VoiceOrb 
-                state={orbState}
-                isMuted={!apiKey}
-                onToggleMic={handleToggleMic}
-                transcript={transcript}
-              />
+              {/* Sliding Tab Switcher */}
+              <div className="card-tabs border-bottom">
+                <button 
+                  onClick={() => {
+                    setActiveTab('voice');
+                    setErrorMessage('');
+                  }} 
+                  className={`tab-btn ${activeTab === 'voice' ? 'active' : ''}`}
+                >
+                  <Mic size={14} /> AI Assistant
+                </button>
+                <button 
+                  onClick={() => {
+                    setActiveTab('manual');
+                    setErrorMessage('');
+                  }} 
+                  className={`tab-btn ${activeTab === 'manual' ? 'active' : ''}`}
+                >
+                  <Plus size={14} /> Manual Log
+                </button>
+              </div>
 
-              {/* Error Callout */}
-              {errorMessage && (
-                <div className="error-callout">
-                  <AlertTriangle size={16} />
-                  <span>{errorMessage}</span>
-                </div>
-              )}
+              {activeTab === 'voice' ? (
+                <>
+                  {/* Animated Orb Component */}
+                  <VoiceOrb 
+                    state={orbState}
+                    isMuted={!apiKey}
+                    onToggleMic={handleToggleMic}
+                    transcript={transcript}
+                  />
 
-              {/* AI Text Response bubble */}
-              {botReply && (
-                <div className="assistant-bubble glass-panel">
-                  <div className="bubble-header">
-                    <Volume2 size={14} className="text-cyan" />
-                    <span>Response Speech:</span>
+                  {/* Error Callout */}
+                  {errorMessage && (
+                    <div className="error-callout">
+                      <AlertTriangle size={16} />
+                      <span>{errorMessage}</span>
+                    </div>
+                  )}
+
+                  {/* AI Text Response bubble */}
+                  {botReply && (
+                    <div className="assistant-bubble glass-panel">
+                      <div className="bubble-header">
+                        <Volume2 size={14} className="text-cyan" />
+                        <span>Response Speech:</span>
+                      </div>
+                      <p className="bubble-text">{botReply}</p>
+                    </div>
+                  )}
+
+                  {/* Structured JSON display */}
+                  {parsedData && (
+                    <div className="structured-data-display glass-panel">
+                      <div className="bubble-header border-bottom">
+                        <Database size={14} className="text-secondary" />
+                        <span>Parsed NLP Entities:</span>
+                      </div>
+                      <pre className="json-pre">
+                        {JSON.stringify(parsedData, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+                </>
+              ) : (
+                /* Manual Expense Input Form */
+                <form onSubmit={handleAddManualExpense} className="manual-form">
+                  <div className="form-group">
+                    <label className="form-label">Spent Amount (₹)</label>
+                    <input 
+                      type="number" 
+                      placeholder="e.g. 250" 
+                      value={manualAmount}
+                      onChange={(e) => setManualAmount(e.target.value)}
+                      className="drawer-input"
+                      required 
+                      min="1"
+                    />
                   </div>
-                  <p className="bubble-text">{botReply}</p>
-                </div>
-              )}
 
-              {/* Structured JSON display */}
-              {parsedData && (
-                <div className="structured-data-display glass-panel">
-                  <div className="bubble-header border-bottom">
-                    <Database size={14} className="text-secondary" />
-                    <span>Parsed NLP Entities:</span>
+                  <div className="form-group">
+                    <label className="form-label">Category</label>
+                    <select 
+                      value={manualCategory}
+                      onChange={(e) => setManualCategory(e.target.value)}
+                      className="drawer-select"
+                    >
+                      <option value="groceries">Groceries</option>
+                      <option value="food">Food & Dining</option>
+                      <option value="fuel">Fuel & Transport</option>
+                      <option value="bills">Utility Bills</option>
+                      <option value="travel">Travel & Trips</option>
+                      <option value="shopping">Shopping & Clothes</option>
+                      <option value="entertainment">Entertainment & Movies</option>
+                      <option value="medical">Medical & Health</option>
+                      <option value="others">Others</option>
+                    </select>
                   </div>
-                  <pre className="json-pre">
-                    {JSON.stringify(parsedData, null, 2)}
-                  </pre>
-                </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Date</label>
+                    <input 
+                      type="date" 
+                      value={manualDate}
+                      onChange={(e) => setManualDate(e.target.value)}
+                      className="drawer-input"
+                      required
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Description / Note</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Grocery items at supermarket" 
+                      value={manualNote}
+                      onChange={(e) => setManualNote(e.target.value)}
+                      className="drawer-input"
+                    />
+                  </div>
+
+                  {errorMessage && (
+                    <div className="error-callout" style={{ marginTop: '0' }}>
+                      <AlertTriangle size={16} />
+                      <span>{errorMessage}</span>
+                    </div>
+                  )}
+
+                  <button type="submit" className="btn-primary" style={{ width: '100%', justifyContent: 'center', marginTop: '10px' }}>
+                    <Plus size={14} /> Log Transaction
+                  </button>
+                </form>
               )}
             </div>
           </section>

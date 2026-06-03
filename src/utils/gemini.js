@@ -34,24 +34,30 @@ Valid intents:
    Examples: "remove that 300 rupees expense", "groceries ఖర్చు డిలీట్ చెయ్".
 4. "clear_all": The user wants to delete all of their expenses.
    Examples: "delete all expenses", "clear everything", "మొత్తం డేటా క్లియర్ చెయ్".
-5. "help": The user is asking for instructions or help.
+5. "help": The user is asking for instructions or help on how to use the app.
    Examples: "how do I use this?", "help me", "నువ్వు ఏమి చేయగలవు?".
+6. "chat": The user is asking general questions, looking for financial advice, planning advice, budget strategies, talking casually, or greeting the assistant.
+   Examples: "how can I save money?", "hello", "can you write a simple monthly budget plan for me?", "కిరాణా ఖర్చు తగ్గించుకోవడం ఎలా?".
 
-For "add_expense" intent, extract the following:
+Rules for entity extraction (only for "add_expense" intent):
 - "amount": Number representing the amount of money spent. Ignore currency symbols. Convert text numbers (like "five hundred", "ఐదు వందలు", "వెయ్యి") to numerical values (e.g., 500, 1000). If no amount is specified, return null.
 - "category": Categorize the expense into one of these exact lowercase strings: "groceries", "food", "fuel", "bills", "travel", "shopping", "entertainment", "medical", "others". If unclear, use "others".
 - "date": The date of the expense in YYYY-MM-DD format. Resolve relative terms (like "today", "yesterday", "నిన్న", "ఈరోజు") relative to today's date (${today}). If not specified, default to ${today}.
 - "note": A short, clean description of the expense in the language spoken (e.g., "petrol", "groceries for home", "బిర్యానీ").
 
+Rules for "chat" and "help" intents:
+- Provide a friendly, expert, and concise text response in the "chatResponse" field. If the user spoke in Telugu, write this response in natural, conversational Telugu. If in English, write in English.
+
 Return ONLY a valid JSON object matching the schema below. Do not wrap it in markdown block fences (\`\`\`json). Do not add any text before or after the JSON.
 
 JSON Schema:
 {
-  "intent": "add_expense" | "get_summary" | "delete_expense" | "clear_all" | "help" | "unknown",
+  "intent": "add_expense" | "get_summary" | "delete_expense" | "clear_all" | "help" | "chat" | "unknown",
   "amount": number | null,
   "category": "groceries" | "food" | "fuel" | "bills" | "travel" | "shopping" | "entertainment" | "medical" | "others" | null,
   "date": "YYYY-MM-DD",
-  "note": "string summary of transaction"
+  "note": "string summary of transaction",
+  "chatResponse": "string (friendly concise answer to user's question, or null if intent is not chat or help)"
 }
 
 User Sentence: "${sentence}"
