@@ -5,6 +5,8 @@
 You *speak* an expense in **Telugu, English, or a mix of both** — e.g. *"నేను 500 రూపాయలు groceries కి ఖర్చు పెట్టాను"* or *"spent 250 on petrol today"* — and the app transcribes it, extracts the cost, category, date, and description using a client-side Google Gemini pipeline, stores it locally, and speaks back a confirmation or statistical summary.
 
 ---
+<img width="1913" height="969" alt="image" src="https://github.com/user-attachments/assets/1dfb5b00-a149-4fa3-82ad-901801b3bf22" />
+
 
 ## 🌟 Core Features
 
